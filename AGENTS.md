@@ -8,7 +8,9 @@ AI recipes family, derived from the base `agent-quickstart-python` template via 
 ## System shape
 
 - **`server/`** — Python FastAPI agent backend (:8000). Owns Agora token generation
-  and agent lifecycle. Uses `CustomLLM(output_modalities=["audio"])` and **no TTS**.
+  and agent lifecycle. Uses `CustomLLM(output_modalities=["audio"])`; no TTS is
+  *used* at runtime, but an **inert TTS vendor is still configured** because the
+  agora-agents 2.0 builder requires `.with_tts()` in cascading mode.
   SDK: `agora-agents>=2.0.0` (`import agora_agent`).
 - **`llm/`** — Python FastAPI custom **audio** endpoint (:8001). OpenAI-compatible
   `POST /audio/chat/completions` returning transcript + base64 PCM16/16kHz audio. No
@@ -25,8 +27,9 @@ AI recipes family, derived from the base `agent-quickstart-python` template via 
 
 ## Patterns / invariants
 
-- The endpoint returns **audio** (`delta.audio.data`, base64 PCM16/16kHz/mono); there
-  is no TTS stage (`output_modalities=["audio"]`).
+- The endpoint returns **audio** (`delta.audio.data`, base64 PCM16/16kHz/mono); no
+  TTS is used at runtime (`output_modalities=["audio"]`). A TTS vendor is still
+  configured (inert) only to satisfy the 2.0 builder — see anti-patterns.
 - The **transcript** (`delta.audio.transcript`) is required — it is stored as agent
   context; omitting it loses conversation memory.
 - `CUSTOM_LLM_URL` is required, must be public, and ends in `/audio/chat/completions`
@@ -35,7 +38,10 @@ AI recipes family, derived from the base `agent-quickstart-python` template via 
 
 ## Anti-patterns
 
-- Do not add a TTS vendor or `.with_tts()` — audio comes from the endpoint.
+- Do not REMOVE `.with_tts()` — the agora-agents 2.0 builder raises "TTS
+  configuration is required" without it in cascading mode. The TTS is inert
+  (`output_modalities=["audio"]` means there is no text for it to synthesize);
+  it exists only to satisfy the builder.
 - Do not drop the transcript chunk from the endpoint.
 - Do not add `agora-agents` to `llm/`.
 - Do not default `CUSTOM_LLM_URL` to localhost.

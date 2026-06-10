@@ -53,9 +53,18 @@ recipe-agent-custom-llm-tts/
 
 ### `server/src/agent.py`
 
-- Build the LLM with `CustomLLM` **plus `output_modalities=["audio"]`**, and **no TTS**:
+> **Correction (found during live testing):** the original plan said to **drop**
+> `.with_tts()`. That is WRONG for agora-agents 2.0 — its cascading builder raises
+> `"TTS configuration is required. Use with_tts() to set it."` regardless of
+> `output_modalities` (no exemption; the only auto-allow is when a `pipeline_id` is
+> set). So we **keep** an **inert** TTS vendor: with `["audio"]` output there is no
+> text for it to synthesize, so it is never used — it exists only to satisfy the
+> builder. (The old 1.4.x recipe predated this validation.)
+
+- Build the LLM with `CustomLLM` **plus `output_modalities=["audio"]`**, keep STT,
+  and keep an inert TTS:
   ```python
-  from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT   # drop MiniMaxTTS
+  from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT, MiniMaxTTS
 
   llm = CustomLLM(
       base_url=self.custom_llm_url,        # CUSTOM_LLM_URL → .../audio/chat/completions
@@ -67,7 +76,8 @@ recipe-agent-custom-llm-tts/
       max_history=10,
   )
   stt = DeepgramSTT(model="nova-3", language="en")
-  # ... .with_stt(stt).with_llm(llm)   — NO .with_tts()
+  tts = MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")  # inert; builder requires it
+  # ... .with_stt(stt).with_llm(llm).with_tts(tts)
   ```
 - Keep the template's validation: `CUSTOM_LLM_URL` required (no localhost default), `CUSTOM_LLM_API_KEY` required, `AGORA_APP_ID`/`AGORA_APP_CERTIFICATE` required.
 - Prompt: a brief "respond with audio, keep it conversational" instruction (`AUDIO_AGENT_PROMPT`).

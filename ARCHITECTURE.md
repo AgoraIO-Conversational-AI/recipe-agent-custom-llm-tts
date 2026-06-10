@@ -32,8 +32,13 @@ Agora ConvoAI Cloud streams that audio to RTC directly — NO TTS
 ## Why audio output (no TTS)
 
 `output_modalities=["audio"]` tells Agora cloud the LLM stage returns audio, so no
-TTS module is configured — your endpoint's PCM plays straight to RTC. The transcript
-in each response (`audio.transcript`) is stored as the agent's conversation context.
+TTS is used — your endpoint's PCM plays straight to RTC. The transcript in each
+response (`audio.transcript`) is stored as the agent's conversation context.
+
+> Note: `server/src/agent.py` still calls `.with_tts()` with an **inert** TTS
+> vendor. The agora-agents 2.0 builder requires a TTS in cascading mode (it raises
+> "TTS configuration is required" otherwise); with `["audio"]` output there is no
+> text for it to synthesize, so it is never used.
 
 ## Why two backends
 

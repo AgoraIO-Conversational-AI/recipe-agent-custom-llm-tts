@@ -8,8 +8,12 @@ through the Next.js `/api/*` rewrite proxy.
 
 The LLM stage uses `CustomLLM` with `output_modalities=["audio"]`, pointed at your
 own endpoint (the `llm/` server). Agora cloud calls that endpoint and plays the
-returned PCM audio directly over RTC — **there is no TTS stage**. STT (Deepgram)
-still transcribes the user's speech into text for the LLM.
+returned PCM audio directly over RTC — **no TTS is used**. STT (Deepgram) still
+transcribes the user's speech into text for the LLM.
+
+> `agent.py` still calls `.with_tts()` with an inert TTS vendor: the agora-agents
+> 2.0 builder requires one in cascading mode, but with `["audio"]` output it has
+> nothing to synthesize and is never used.
 
 ## Run
 
