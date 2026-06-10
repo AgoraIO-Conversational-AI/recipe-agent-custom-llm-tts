@@ -25,12 +25,13 @@ Keep responses brief and conversational."""
 
 class Agent:
     """
-    High-level wrapper for Agora Conversational AI Agent with Custom LLM.
+    High-level wrapper for Agora Conversational AI Agent with audio output.
 
-    The key difference from the quickstart is that this uses the OpenAI vendor
-    with a custom `base_url` pointing to your own OpenAI-compatible endpoint
-    (the custom_llm_server.py proxy). The Agora cloud will call your proxy
-    for chat completions instead of calling OpenAI directly.
+    The key difference from the quickstart is the LLM stage: this uses the
+    CustomLLM vendor with `output_modalities=["audio"]`, pointed at your own
+    OpenAI-compatible audio endpoint (the custom_llm_server.py mock). Agora
+    cloud calls that endpoint and plays the returned PCM audio directly over
+    RTC — there is no TTS step.
 
     IMPORTANT: The custom LLM URL must be publicly accessible for the Agora
     Conversational AI Engine (cloud) to reach it. For local development, use

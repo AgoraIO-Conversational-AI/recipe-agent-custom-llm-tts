@@ -18,7 +18,7 @@ Agent backend (server/, :8000)
   ▼
 Agora ConvoAI Cloud
   │  user speech → Deepgram STT (managed) → text
-  │  POST <CUSTOM_LLM_URL>/audio/chat/completions   (Authorization: Bearer)
+  │  POST <CUSTOM_LLM_URL>   (Authorization: Bearer)   # URL already ends in /audio/chat/completions
   ▼
 Custom audio endpoint (llm/, :8001, public via tunnel)
   │  returns transcript + base64 PCM audio (SSE)
