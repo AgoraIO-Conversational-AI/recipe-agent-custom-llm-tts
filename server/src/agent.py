@@ -1,11 +1,12 @@
 """
-Agent — Custom LLM Recipe
+Agent — Custom LLM-TTS Recipe
 
-High-level API for managing Agora Conversational AI Agents with a Custom LLM.
+High-level API for managing Agora Conversational AI Agents whose LLM stage
+returns AUDIO directly (output_modalities=["audio"]), bypassing TTS.
 
-Instead of using the built-in OpenAI vendor, this recipe configures the agent
-to use a custom LLM endpoint (your own proxy server) that is compatible with
-the OpenAI Chat Completions API format.
+The agent uses the CustomLLM vendor pointed at your own OpenAI-compatible
+audio endpoint (the llm/ server). Agora cloud calls that endpoint and plays
+the returned PCM audio straight to the user over RTC — there is no TTS step.
 """
 import logging
 import os
@@ -14,16 +15,12 @@ from typing import Any, Dict, Optional
 
 from agora_agent import Area, AsyncAgora
 from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT, MiniMaxTTS
+from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT
 
 logger = logging.getLogger("uvicorn.error")
 
-CUSTOM_LLM_PROMPT = """You are a helpful AI assistant powered by a custom LLM integration \
-with Agora's Conversational AI Engine.
-
-You can answer questions, have conversations, and help users with various tasks. \
-Keep most replies to one or two sentences unless the user explicitly asks for more detail.
-"""
+AUDIO_AGENT_PROMPT = """You are a helpful AI assistant that responds with audio. \
+Keep responses brief and conversational."""
 
 
 class Agent:
@@ -45,7 +42,7 @@ class Agent:
         self.app_certificate = os.getenv("AGORA_APP_CERTIFICATE")
         self.greeting = os.getenv(
             "AGENT_GREETING",
-            "Hi there! I'm your AI assistant powered by a custom LLM. How can I help?",
+            "Hi there! I'm a custom audio agent.",
         )
 
         # Custom LLM configuration.
@@ -56,7 +53,7 @@ class Agent:
         # agent "start" while its LLM calls silently fail cloud-side.
         self.custom_llm_url = os.getenv("CUSTOM_LLM_URL")
         self.custom_llm_api_key = os.getenv("CUSTOM_LLM_API_KEY", "any-key-here")
-        self.custom_llm_model = os.getenv("CUSTOM_LLM_MODEL", "mock-model")
+        self.custom_llm_model = os.getenv("CUSTOM_LLM_MODEL", "audio-mock")
 
         if not self.app_id or not self.app_certificate:
             raise ValueError("AGORA_APP_ID and AGORA_APP_CERTIFICATE are required")
@@ -100,33 +97,28 @@ class Agent:
         name = f"agent_{channel_name}_{agent_uid}_{int(time.time())}"
 
         # ============================================================
-        # KEY DIFFERENCE: Use the SDK's CustomLLM vendor
+        # KEY DIFFERENCE: CustomLLM with output_modalities=["audio"]
         # ============================================================
-        # The base quickstart uses a managed `OpenAI(model="gpt-4o-mini")`.
-        # This recipe instead points the LLM stage at our own OpenAI-compatible
-        # endpoint (the llm/ server) via the purpose-built `CustomLLM` vendor.
-        # CustomLLM stamps `vendor: "custom"` in the wire config and requires
-        # both base_url and api_key. Your endpoint can then:
-        # - Add custom preprocessing (RAG, context injection)
-        # - Route to different models dynamically
-        # - Add logging and analytics
-        # - Implement custom tool calling
+        # The base quickstart uses a managed text LLM + MiniMax TTS. This
+        # recipe instead points the LLM stage at our own OpenAI-compatible
+        # endpoint via CustomLLM AND sets output_modalities=["audio"], which
+        # tells Agora cloud the endpoint returns audio directly. With pure
+        # ["audio"] output, NO TTS module is configured — the PCM audio from
+        # your endpoint plays straight to the user over RTC.
         # ============================================================
         llm = CustomLLM(
             base_url=self.custom_llm_url,
             api_key=self.custom_llm_api_key,
             model=self.custom_llm_model,
+            output_modalities=["audio"],
             greeting_message=self.greeting,
             failure_message="Please wait a moment.",
-            max_history=15,
-            max_tokens=1024,
-            temperature=0.7,
-            top_p=0.95,
+            max_history=10,
         )
 
-        # STT and TTS remain the same as the quickstart
+        # STT still transcribes the user's speech into text for the LLM.
         stt = DeepgramSTT(model="nova-3", language="en")
-        tts = MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")
+        # No TTS — audio comes directly from the LLM endpoint.
 
         parameters = {
             "data_channel": "rtm",
@@ -138,7 +130,7 @@ class Agent:
 
         agora_agent = AgoraAgent(
             name=name,
-            instructions=CUSTOM_LLM_PROMPT,
+            instructions=AUDIO_AGENT_PROMPT,
             greeting=self.greeting,
             failure_message="Please wait a moment.",
             max_history=50,
@@ -160,7 +152,7 @@ class Agent:
                     },
                 },
             },
-            advanced_features={"enable_rtm": True, "enable_tools": True},
+            advanced_features={"enable_rtm": True},
             parameters=parameters,
         )
 
@@ -168,7 +160,6 @@ class Agent:
             agora_agent
             .with_stt(stt)
             .with_llm(llm)
-            .with_tts(tts)
         )
 
         session = agora_agent.create_async_session(
