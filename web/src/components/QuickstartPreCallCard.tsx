@@ -24,11 +24,11 @@ export function QuickstartPreCallCard({
 			}}
 		>
 			<h1 className="text-[28px] font-medium leading-[1.2] text-white">
-				Custom LLM Recipe
+				Custom LLM-TTS Recipe
 			</h1>
 			<p className="mt-[14px] text-sm font-medium leading-6 text-muted-foreground">
-				Bring your own LLM to Agora&apos;s Conversational AI Engine via a custom
-				OpenAI-compatible proxy server.
+				Bring your own audio-generating endpoint to Agora&apos;s Conversational AI
+				Engine. Your endpoint returns audio directly — no separate TTS step.
 			</p>
 
 			<Button

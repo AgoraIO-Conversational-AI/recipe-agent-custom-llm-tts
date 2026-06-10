@@ -15,9 +15,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-	title: "Custom LLM Recipe | Agora Conversational AI",
+	title: "Custom LLM-TTS Recipe | Agora Conversational AI",
 	description:
-		"Recipe: Bring your own LLM to Agora Conversational AI Engine via a custom OpenAI-compatible proxy.",
+		"Recipe: Bring your own audio-generating endpoint (LLM + TTS combined) to Agora Conversational AI Engine — your endpoint returns audio directly, bypassing TTS.",
 	icons: {
 		icon: [
 			{ url: "/favicon.ico" },
