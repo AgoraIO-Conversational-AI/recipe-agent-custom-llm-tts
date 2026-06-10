@@ -59,7 +59,7 @@ except ValueError as e:
 
 # FastAPI application
 app = FastAPI(
-    title="Agora Custom LLM Recipe Service",
+    title="Agora Custom LLM-TTS Recipe Service",
     version="1.0.0",
     description="Agora Conversational AI with Custom LLM integration",
 )
@@ -91,7 +91,7 @@ class StopAgentRequest(BaseModel):
 
 # API endpoints
 def _generate_channel_name() -> str:
-    return f"custom-llm-{int(time.time())}-{random.randint(1000, 9999)}"
+    return f"custom-llm-tts-{int(time.time())}-{random.randint(1000, 9999)}"
 
 
 @router.get("/get_config")
