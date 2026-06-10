@@ -1,29 +1,33 @@
 """
-Custom LLM Server — Mock Implementation
+Custom Audio LLM Server — Mock (custom-llm-tts recipe)
 
-This server demonstrates how to implement an OpenAI-compatible Chat Completions
-endpoint that works with Agora Conversational AI Engine.
+An OpenAI-compatible audio-modalities endpoint for Agora Conversational AI.
+Instead of returning text (delta.content), this endpoint returns AUDIO
+directly (delta.audio), bypassing TTS entirely.
 
-Key points:
-- Must implement POST /chat/completions
-- Must support streaming responses (Server-Sent Events)
-- Must follow OpenAI Chat Completions response format
-- Agora cloud sends Authorization header with the api_key you configured
+Contract — POST /audio/chat/completions, streaming SSE:
+  1. Transcript chunk:  choices[0].delta.audio = {"id": <id>, "transcript": <text>}
+  2. Audio chunks:      choices[0].delta.audio = {"id": <id>, "data": <base64 PCM>}
+  3. Terminates with:   data: [DONE]
 
-This mock version returns pre-defined responses so you can test the full
-voice pipeline (STT → Custom LLM → TTS) without any external LLM dependency.
+Audio format: PCM16, 16 kHz, mono, 1280-byte (40 ms) chunks.
 
-Replace the mock logic with your own:
-- Call your own model (local or remote)
-- Add RAG context injection
-- Implement tool calling
-- Route to different models based on content
+IMPORTANT: the transcript is NOT just for display. Agora cloud stores it as the
+agent's conversation context; omitting `audio.transcript` means the agent will
+not remember what it said.
+
+This mock generates a sine-wave tone (pure stdlib). Replace the audio source
+with your own model / TTS / pre-recorded clips, keeping the PCM format. A
+production endpoint should also validate the `Authorization: Bearer` header
+that Agora cloud forwards.
 """
 import asyncio
+import base64
 import json
 import logging
+import math
 import os
-import time
+import struct
 import uuid
 from typing import Dict, List, Optional, Union
 
@@ -46,10 +50,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Custom LLM Server (Mock)",
+    title="Custom Audio LLM Server (Mock)",
     description=(
-        "OpenAI-compatible Chat Completions endpoint for Agora Conversational AI Engine. "
-        "This mock implementation demonstrates the required interface contract."
+        "OpenAI-compatible audio-modalities endpoint for Agora Conversational AI. "
+        "Returns audio directly (delta.audio), bypassing TTS."
     ),
     version="1.0.0",
 )
@@ -64,7 +68,7 @@ app.add_middleware(
 
 
 # =============================================================================
-# Request Models — These match what Agora ConvoAI Engine sends
+# Request models — match what Agora ConvoAI Engine sends for audio modalities
 # =============================================================================
 
 class TextContent(BaseModel):
@@ -85,172 +89,95 @@ class UserMessage(BaseModel):
 class AssistantMessage(BaseModel):
     role: str = "assistant"
     content: Union[str, List[TextContent], None] = None
-    tool_calls: Optional[List[Dict]] = None
-
-
-class ToolMessage(BaseModel):
-    role: str = "tool"
-    content: Union[str, List[str]]
-    tool_call_id: str
+    audio: Optional[Dict[str, str]] = None
 
 
 class ChatCompletionRequest(BaseModel):
     model: Optional[str] = None
-    messages: List[Union[SystemMessage, UserMessage, AssistantMessage, ToolMessage]]
+    messages: List[Union[SystemMessage, UserMessage, AssistantMessage]]
+    modalities: List[str] = ["text", "audio"]
+    audio: Optional[Dict[str, str]] = None
     stream: bool = True
     stream_options: Optional[Dict] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    tools: Optional[List[Dict]] = None
-    tool_choice: Optional[Union[str, Dict]] = None
-    response_format: Optional[Dict] = None
 
 
 # =============================================================================
-# Mock Response Logic
+# Mock audio generation — sine-wave tone (pure stdlib)
 # =============================================================================
-# Replace this section with your actual LLM logic:
-# - Call a local model (Ollama, vLLM, etc.)
-# - Call a remote API
-# - Implement RAG retrieval + generation
-# - Add business logic, filtering, routing
+# Replace this with your real audio source. Keep PCM16 / 16 kHz / mono.
 # =============================================================================
 
-MOCK_RESPONSES = [
-    "I'm a custom LLM running on your own server! This response is coming through Agora's Conversational AI pipeline, from your custom endpoint, through TTS, and into your ears as speech.",
-    "This is a mock response demonstrating the custom LLM integration. In production, you'd replace this with calls to your own model or any LLM provider.",
-    "Hello! I'm responding from your custom LLM server. The full pipeline is working: your speech was transcribed by STT, sent to me, and my response will be converted to speech by TTS.",
-    "Great question! I'm a mock LLM server that demonstrates how to build a custom endpoint compatible with Agora's Conversational AI Engine. You can replace me with any logic you want.",
-]
+SAMPLE_RATE = 16000      # 16 kHz
+BYTES_PER_SAMPLE = 2     # PCM16
+CHUNK_DURATION_MS = 40   # 40 ms per chunk
+CHUNK_SIZE = int(SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_MS / 1000)  # 1280 bytes
 
-_response_counter = 0
+MOCK_TRANSCRIPT = "This is a mock audio response from the custom LLM-TTS endpoint."
 
 
-def get_mock_response(messages: list) -> str:
-    """
-    Generate a mock response based on the conversation.
-
-    In a real implementation, this is where you'd:
-    - Extract the user's latest message
-    - Query your knowledge base / vector DB
-    - Call your own model
-    - Apply business logic
-    """
-    global _response_counter
-
-    # Extract the last user message for logging
-    last_user_msg = ""
-    for msg in reversed(messages):
-        if hasattr(msg, "role") and msg.role == "user":
-            content = msg.content
-            if isinstance(content, str):
-                last_user_msg = content
-            elif isinstance(content, list) and len(content) > 0:
-                first = content[0]
-                if isinstance(first, dict):
-                    last_user_msg = first.get("text", "")
-                elif hasattr(first, "text"):
-                    last_user_msg = first.text
-            break
-
-    logger.info(f"User said: {last_user_msg}")
-
-    # Cycle through mock responses
-    response = MOCK_RESPONSES[_response_counter % len(MOCK_RESPONSES)]
-    _response_counter += 1
-    return response
+def generate_tone(duration_seconds: float = 2.0, frequency: float = 440.0) -> bytes:
+    """Generate a mono PCM16 sine-wave tone with a short fade in/out envelope."""
+    num_samples = int(SAMPLE_RATE * duration_seconds)
+    fade = SAMPLE_RATE * 0.05  # 50 ms fade
+    samples = []
+    for i in range(num_samples):
+        t = i / SAMPLE_RATE
+        envelope = min(1.0, i / fade) * min(1.0, (num_samples - i) / fade)
+        value = int(16000 * envelope * math.sin(2 * math.pi * frequency * t))
+        samples.append(struct.pack("<h", max(-32768, min(32767, value))))
+    return b"".join(samples)
 
 
-# =============================================================================
-# Streaming Response — Must follow OpenAI SSE format exactly
-# =============================================================================
-# Agora ConvoAI Engine expects:
-# 1. Each chunk as "data: {json}\n\n"
-# 2. Final "data: [DONE]\n\n"
-# 3. Each chunk has: id, object, created, model, choices[{delta, index, finish_reason}]
-# =============================================================================
-
-def make_chunk(chunk_id: str, model: str, content: str, finish_reason=None) -> str:
-    """Build a single SSE chunk in OpenAI format."""
-    chunk = {
-        "id": chunk_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model or "mock-model",
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"content": content} if content else {},
-                "finish_reason": finish_reason,
-            }
-        ],
-    }
-    return f"data: {json.dumps(chunk)}\n\n"
+def split_into_chunks(audio: bytes) -> List[bytes]:
+    """Split PCM audio into fixed-size streaming chunks."""
+    return [audio[i:i + CHUNK_SIZE] for i in range(0, len(audio), CHUNK_SIZE)]
 
 
-def make_role_chunk(chunk_id: str, model: str) -> str:
-    """First chunk that sets the assistant role."""
-    chunk = {
-        "id": chunk_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model or "mock-model",
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"role": "assistant", "content": ""},
-                "finish_reason": None,
-            }
-        ],
-    }
-    return f"data: {json.dumps(chunk)}\n\n"
-
-
-@app.post("/chat/completions")
-async def chat_completions(
+@app.post("/audio/chat/completions")
+async def audio_chat_completions(
     request: ChatCompletionRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     """
-    OpenAI-compatible chat completions endpoint.
-
-    This is the endpoint that Agora Conversational AI Engine calls.
-    It must:
-    - Accept the OpenAI Chat Completions request format
-    - Return streaming SSE responses in OpenAI chunk format
-    - End with "data: [DONE]"
+    OpenAI-compatible audio-modalities endpoint that Agora cloud calls.
+    Streams a transcript chunk followed by base64 PCM audio chunks.
     """
     logger.info(
-        f"Received request: model={request.model}, "
-        f"messages={len(request.messages)}, stream={request.stream}"
+        "Received audio request: model=%s, modalities=%s, messages=%d",
+        request.model, request.modalities, len(request.messages),
     )
 
-    # Agora ConvoAI always uses streaming
     if not request.stream:
-        raise HTTPException(
-            status_code=400,
-            detail="Only streaming mode is supported. Set stream=true.",
-        )
+        raise HTTPException(status_code=400, detail="Only streaming mode is supported. Set stream=true.")
 
-    # Generate mock response
-    response_text = get_mock_response(request.messages)
-    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-    model = request.model or "mock-model"
+    audio_id = uuid.uuid4().hex
+    message_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    chunks = split_into_chunks(generate_tone())
 
     async def generate():
-        """Stream the response word by word to simulate real LLM behavior."""
-        # First chunk: role
-        yield make_role_chunk(chunk_id, model)
+        # 1) Transcript chunk — REQUIRED: Agora cloud stores it as agent context.
+        yield "data: " + json.dumps({
+            "id": message_id,
+            "choices": [{
+                "index": 0,
+                "delta": {"audio": {"id": audio_id, "transcript": MOCK_TRANSCRIPT}},
+                "finish_reason": None,
+            }],
+        }) + "\n\n"
 
-        # Stream content word by word with small delays (simulates token generation)
-        words = response_text.split(" ")
-        for i, word in enumerate(words):
-            token = word if i == 0 else f" {word}"
-            yield make_chunk(chunk_id, model, token)
-            await asyncio.sleep(0.05)  # 50ms per token, ~realistic speed
+        # 2) Audio chunks — base64-encoded PCM, ~40 ms real-time pacing.
+        for chunk in chunks:
+            yield "data: " + json.dumps({
+                "id": message_id,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"audio": {"id": audio_id, "data": base64.b64encode(chunk).decode("utf-8")}},
+                    "finish_reason": None,
+                }],
+            }) + "\n\n"
+            await asyncio.sleep(CHUNK_DURATION_MS / 1000)
 
-        # Final chunk: finish_reason
-        yield make_chunk(chunk_id, model, "", finish_reason="stop")
+        # 3) Done.
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -258,13 +185,11 @@ async def chat_completions(
 
 @app.get("/health")
 async def health():
-    """Health check."""
-    return {"status": "ok", "service": "custom-llm-mock"}
+    return {"status": "ok", "service": "custom-llm-tts-mock"}
 
 
 if __name__ == "__main__":
     port = int(os.getenv("CUSTOM_LLM_PORT", "8001"))
-    logger.info(f"Starting Custom LLM Server (Mock) on port {port}")
-    logger.info("This server returns mock responses — no LLM API key needed.")
-    logger.info(f"Endpoint: http://0.0.0.0:{port}/chat/completions")
+    logger.info("Starting Custom Audio LLM Server (Mock) on port %d", port)
+    logger.info("Endpoint: http://0.0.0.0:%d/audio/chat/completions", port)
     uvicorn.run(app, host="0.0.0.0", port=port)
