@@ -1,22 +1,28 @@
-# Custom LLM Endpoint — Mock
+# Custom Audio LLM Endpoint — Mock
 
-An OpenAI-compatible `POST /chat/completions` server (port 8001) that Agora cloud
-calls during a conversation. This mock returns canned streaming responses so you
-can exercise the full STT → custom LLM → TTS pipeline with **no LLM API key**.
+An OpenAI-compatible `POST /audio/chat/completions` server (port 8001) that Agora
+cloud calls during a conversation. Instead of text, it returns **audio directly**
+(`delta.audio`), which Agora plays over RTC with **no TTS step**. This mock emits a
+sine-wave tone so you can exercise the full pipeline with **no API key**.
 
-It has no `agora-agents` dependency — it is a plain FastAPI app, which is exactly
-the boundary you replace with your own model.
+It has no `agora-agents` dependency — a plain FastAPI app, the boundary you replace
+with your own audio source.
 
 ## The contract
 
-Implement `POST /chat/completions` returning OpenAI-style SSE:
+`POST /audio/chat/completions`, streaming SSE:
 
-- first chunk sets `delta.role = "assistant"`
-- content chunks carry `delta.content`
-- a final chunk sets `finish_reason = "stop"`
-- the stream terminates with `data: [DONE]`
+1. **Transcript chunk** — `choices[0].delta.audio = {"id": <id>, "transcript": <text>}`.
+2. **Audio chunks** — `choices[0].delta.audio = {"id": <id>, "data": <base64 PCM>}`.
+3. Terminate with `data: [DONE]`.
 
-Only streaming (`stream: true`) is supported; non-streaming requests return 400.
+Audio format: **PCM16, 16 kHz, mono, 1280-byte (40 ms) chunks**. Non-streaming
+requests are rejected with HTTP 400.
+
+> **The transcript is functionally required, not cosmetic.** Agora cloud stores
+> `audio.transcript` as the agent's conversation context; if you omit it, the agent
+> will not remember what it said. (Word-level `words` timestamps are optional and not
+> emitted by this mock.)
 
 ## Run
 
@@ -29,23 +35,22 @@ python src/custom_llm_server.py     # serves on CUSTOM_LLM_PORT (default 8001)
 
 ## Expose it publicly
 
-Agora cloud — not the browser — calls this server, so it must be reachable from
-the public internet. For local dev, tunnel it:
+Agora cloud — not the browser — calls this server, so it must be reachable from the
+public internet:
 
 ```bash
 ngrok http 8001
 ```
 
-Then set `CUSTOM_LLM_URL=https://<tunnel>/chat/completions` in `server/.env.local`.
+Then set `CUSTOM_LLM_URL=https://<tunnel>/audio/chat/completions` in `server/.env.local`.
 
 ## Auth
 
 This mock does **not** authenticate. A production endpoint should validate the
-`Authorization: Bearer <CUSTOM_LLM_API_KEY>` header that Agora cloud forwards
-(the key you set on the agent backend).
+`Authorization: Bearer <CUSTOM_LLM_API_KEY>` header Agora cloud forwards.
 
 ## Replace the mock
 
-Edit `get_mock_response()` in `src/custom_llm_server.py`. Examples: call a local
-model (Ollama/vLLM), inject RAG context before generating, or route models by
-content.
+Replace `generate_tone()` in `src/custom_llm_server.py` with your real audio source
+(a TTS engine, your own model, or pre-recorded PCM), keeping the PCM format and the
+transcript chunk.
