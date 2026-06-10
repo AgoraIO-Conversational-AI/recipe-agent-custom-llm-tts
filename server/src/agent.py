@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from agora_agent import Area, AsyncAgora
 from agora_agent.agentkit import Agent as AgoraAgent
-from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT
+from agora_agent.agentkit.vendors import CustomLLM, DeepgramSTT, MiniMaxTTS
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -103,9 +103,8 @@ class Agent:
         # The base quickstart uses a managed text LLM + MiniMax TTS. This
         # recipe instead points the LLM stage at our own OpenAI-compatible
         # endpoint via CustomLLM AND sets output_modalities=["audio"], which
-        # tells Agora cloud the endpoint returns audio directly. With pure
-        # ["audio"] output, NO TTS module is configured — the PCM audio from
-        # your endpoint plays straight to the user over RTC.
+        # tells Agora cloud the endpoint returns audio directly — the PCM
+        # audio from your endpoint plays straight to the user over RTC.
         # ============================================================
         llm = CustomLLM(
             base_url=self.custom_llm_url,
@@ -117,9 +116,16 @@ class Agent:
             max_history=10,
         )
 
-        # STT still transcribes the user's speech into text for the LLM.
+        # STT transcribes the user's speech into text for the LLM.
         stt = DeepgramSTT(model="nova-3", language="en")
-        # No TTS — audio comes directly from the LLM endpoint.
+
+        # A TTS vendor is still configured because the agora-agents 2.0 builder
+        # REQUIRES one in cascading mode (it raises "TTS configuration is
+        # required" otherwise). It is effectively INERT: with
+        # output_modalities=["audio"] the LLM returns audio directly, so there
+        # is no text for the TTS to synthesize and Agora plays the endpoint's
+        # audio. We keep it only to satisfy the builder.
+        tts = MiniMaxTTS(model="speech_2_6_turbo", voice_id="English_captivating_female1")
 
         parameters = {
             "data_channel": "rtm",
@@ -161,6 +167,7 @@ class Agent:
             agora_agent
             .with_stt(stt)
             .with_llm(llm)
+            .with_tts(tts)
         )
 
         session = agora_agent.create_async_session(
