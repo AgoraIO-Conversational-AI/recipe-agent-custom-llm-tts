@@ -5,6 +5,7 @@
 **Template repo:** `recipe-agent-custom-llm` (`git@github.com:AgoraIO-Conversational-AI/recipe-agent-custom-llm.git`) — the finished custom-llm recipe, used as the structural template.
 **Source of the recipe logic:** the `audio-modalities` recipe, preserved on the `backup/main-multi-recipe` branch of the original `agent-recipes-python` repo.
 **Base quickstart (grandparent):** `agent-quickstart-python`.
+**Authoritative reference:** Agora ConvoAI [Audio Modality guide](https://doc.shengwang.cn/doc/convoai/restful/user-guides/audio-modality) — confirms the config, response format, no-TTS behavior, transcript-as-context, and greeting protocol below.
 
 ## Goal
 
@@ -70,6 +71,7 @@ recipe-agent-custom-llm-tts/
   ```
 - Keep the template's validation: `CUSTOM_LLM_URL` required (no localhost default), `CUSTOM_LLM_API_KEY` required, `AGORA_APP_ID`/`AGORA_APP_CERTIFICATE` required.
 - Prompt: a brief "respond with audio, keep it conversational" instruction (`AUDIO_AGENT_PROMPT`).
+- **Keep the greeting.** Per the Audio Modality guide, the greeting is supported in audio mode through the messages protocol (a final `role: "assistant"` message is converted to audio and played directly) — it does **not** require TTS. So retain `AGENT_GREETING` and `greeting_message=`/`greeting=` in `agent.py`; the mock returns its tone for the greeting turn like any other.
 - `advanced_features={"enable_rtm": True}` (drop `enable_tools` — not used for the audio path).
 - Update the "KEY DIFFERENCE" comment to explain `output_modalities=["audio"]` + no TTS.
 - `server.py` is unchanged from the template except: title "Agora Custom LLM-TTS Recipe Service" and channel prefix `custom-llm-tts-`.
@@ -79,11 +81,14 @@ recipe-agent-custom-llm-tts/
 - Serve **`POST /audio/chat/completions`** (and `GET /health`). Streaming SSE:
   1. First chunk: transcript — `choices[0].delta.audio = {"id": <audio_id>, "transcript": <text>}`.
   2. Subsequent chunks: audio — `choices[0].delta.audio = {"id": <audio_id>, "data": <base64 PCM>}`.
-  3. Terminate with `data: [DONE]`.
-- **Audio format:** PCM16, 16 kHz, mono; 1280-byte (40 ms) chunks.
-- **Mock source:** generate a sine-wave tone (e.g. 440 Hz, ~2 s, with a short fade in/out envelope) in stdlib; split into 1280-byte chunks; base64-encode each. No `file.pcm`/`file.txt`, no `aiofiles`.
+  3. Terminate with `data: [DONE]`. (No `finish_reason:"stop"` chunk — the audio contract goes straight to `[DONE]` after the data chunks; all chunks carry `finish_reason: null`.)
+- **Reject non-streaming** requests with HTTP 400 (carried from the working recipe).
+- **The transcript is functionally required, not just cosmetic.** Per the guide, transcript content automatically enters the agent's context; **omitting `audio.transcript` blocks context storage** (the agent loses memory of what it said). So the mock always emits the transcript chunk, and the README/docstring state this explicitly.
+- **`words` (word-level timestamps) are intentionally omitted** — transcript-only. They are an optional enhancement for caption alignment and not needed for this recipe.
+- **Audio format:** PCM16, 16 kHz, mono; 1280-byte (40 ms) chunks; ~40 ms pacing between chunks (near real-time).
+- **Mock source:** generate a sine-wave tone (e.g. 440 Hz, ~2 s, with a short fade in/out envelope) in stdlib (`math`/`struct`/`base64`); split into 1280-byte chunks; base64-encode each. No `file.pcm`/`file.txt`, no `aiofiles` (the old recipe listed `aiofiles` but never used it — it read files with sync `open()`).
 - Load dotenv with `override=False` (same lesson as the template — lets the verify harness inject `CUSTOM_LLM_PORT`).
-- Module docstring documents the audio SSE contract and how to swap the mock for a real audio source.
+- Module docstring documents the audio SSE contract, the transcript-as-context requirement, and how to swap the mock for a real audio source.
 
 ### `llm/` support files
 
@@ -97,7 +102,7 @@ recipe-agent-custom-llm-tts/
   ```
   AGORA_APP_ID=your_agora_app_id
   AGORA_APP_CERTIFICATE=your_agora_app_certificate
-  AGENT_GREETING=
+  AGENT_GREETING=Hi there! I'm a custom audio agent.
   CUSTOM_LLM_URL=https://your-tunnel.ngrok-free.dev/audio/chat/completions
   CUSTOM_LLM_API_KEY=any-key-here
   CUSTOM_LLM_MODEL=audio-mock
@@ -109,6 +114,7 @@ recipe-agent-custom-llm-tts/
 
 - **Branding:** page title/description → "Custom LLM-TTS Recipe"; pre-call card copy → "bring your own audio-generating endpoint (LLM + TTS in one)".
 - **`QuickstartPipelineMetrics`:** remove the **TTS row** — there is no separate TTS stage. Pipeline becomes `Deepgram STT` → `Custom LLM (audio)`. (Template had stt/llm/tts; drop tts, relabel llm.)
+- `ConversationErrorCard.tsx` is left **unchanged** — its generic `llm:/asr:/tts:` error parsing is harmless in a no-TTS pipeline (a `tts:` error simply never arises). The only web changes are branding + the pipeline-metrics row.
 - Everything else in `web/` is unchanged (RTC plays the agent's audio identically whether it came from TTS or directly from the endpoint). The dark-theme fix and all infra carry over.
 
 ### `web/scripts/verify-local-llm.ts` (audio contract harness)
@@ -148,7 +154,7 @@ recipe-agent-custom-llm-tts/
 ## Error Handling
 
 - `server.py`: same `_log_route_error` / `_to_http_error` / `{code,msg,data}` envelope as the template.
-- `llm/`: streaming SSE; mirror the template's request handling (reject the non-streaming case if the template/old recipe did).
+- `llm/`: streaming SSE; **rejects non-streaming requests with HTTP 400**, matching the working recipe.
 
 ## Testing / Verification
 
@@ -163,7 +169,7 @@ Definition of done: `bun run verify:local` passes and the README onboarding is c
 
 ## Risks / Notes
 
-- The audio chunk shape (`delta.audio.{transcript,data}`) and PCM format (16 kHz / 16-bit / mono / 1280-byte chunks) must match what Agora cloud expects for `output_modalities=["audio"]`; these are carried verbatim from the working `audio-modalities` recipe.
+- The audio chunk shape (`delta.audio.{transcript,data}`) and PCM format (16 kHz / 16-bit / mono / 1280-byte chunks) are a **stable contract that does not change across the 1.4 → 2.0 SDK** (confirmed by the maintainer). They are carried verbatim from the working `audio-modalities` recipe, so this is not a migration risk — only the vendor wiring (`OpenAI` → `CustomLLM`) and SDK version change.
 - `verify-local-llm.ts` resolves `../llm` from `web/`; unchanged because the dir stays `llm/`.
 - Under a global loopback proxy, `verify` needs loopback routed DIRECT (documented in README troubleshooting, inherited from the template).
 ```
