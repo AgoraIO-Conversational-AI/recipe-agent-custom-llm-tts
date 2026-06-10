@@ -96,51 +96,53 @@ async function main() {
   try {
     await waitForHealthy(baseUrl, 10_000)
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}/audio/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer any-key-here',
       },
       body: JSON.stringify({
-        model: 'mock-model',
+        model: 'audio-mock',
         messages: [{ role: 'user', content: 'Hello' }],
         stream: true,
+        modalities: ['text', 'audio'],
       }),
     })
 
-    assert(response.status === 200, 'POST /chat/completions should return 200 for a streaming request')
+    assert(response.status === 200, 'POST /audio/chat/completions should return 200 for a streaming request')
     assert(
       (response.headers.get('content-type') ?? '').includes('text/event-stream'),
-      'POST /chat/completions should return a text/event-stream response',
+      'POST /audio/chat/completions should return a text/event-stream response',
     )
 
     const body = await response.text()
     assert(
-      body.includes('"role": "assistant"') || body.includes('"role":"assistant"'),
-      'SSE stream should open with an assistant role delta',
+      body.includes('"transcript"'),
+      'SSE stream should include a delta.audio transcript chunk (required for agent context)',
     )
     assert(
-      body.includes('"finish_reason": "stop"') || body.includes('"finish_reason":"stop"'),
-      'SSE stream should close the choice with finish_reason "stop"',
+      body.includes('"data"'),
+      'SSE stream should include at least one delta.audio base64 PCM data chunk',
     )
     assert(
       body.trimEnd().endsWith('data: [DONE]'),
       'SSE stream should terminate with data: [DONE]',
     )
 
-    const nonStream = await fetch(`${baseUrl}/chat/completions`, {
+    const nonStream = await fetch(`${baseUrl}/audio/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'mock-model',
+        model: 'audio-mock',
         messages: [{ role: 'user', content: 'Hi' }],
         stream: false,
+        modalities: ['text', 'audio'],
       }),
     })
     assert(nonStream.status === 400, 'Non-streaming requests should be rejected with 400')
 
-    console.log('Custom LLM endpoint contract check passed')
+    console.log('Custom audio LLM endpoint contract check passed')
   } finally {
     llmProcess.kill()
     await llmProcess.exited
