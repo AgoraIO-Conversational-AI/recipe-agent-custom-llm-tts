@@ -36,7 +36,8 @@ TTS is used — your endpoint's PCM plays straight to RTC. The transcript in eac
 response (`audio.transcript`) is stored as the agent's conversation context.
 
 > Note: `server/src/agent.py` still calls `.with_tts()` with an **inert** TTS
-> vendor. The agora-agents 2.0 builder requires a TTS in cascading mode (it raises
+> vendor. The agora-agents builder requires a TTS in cascading mode — in both 1.4
+> and 2.0 (it raises
 > "TTS configuration is required" otherwise); with `["audio"]` output there is no
 > text for it to synthesize, so it is never used.
 

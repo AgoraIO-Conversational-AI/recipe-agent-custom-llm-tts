@@ -54,12 +54,16 @@ recipe-agent-custom-llm-tts/
 ### `server/src/agent.py`
 
 > **Correction (found during live testing):** the original plan said to **drop**
-> `.with_tts()`. That is WRONG for agora-agents 2.0 — its cascading builder raises
+> `.with_tts()`. That is WRONG — the agora-agents cascading builder raises
 > `"TTS configuration is required. Use with_tts() to set it."` regardless of
-> `output_modalities` (no exemption; the only auto-allow is when a `pipeline_id` is
-> set). So we **keep** an **inert** TTS vendor: with `["audio"]` output there is no
-> text for it to synthesize, so it is never used — it exists only to satisfy the
-> builder. (The old 1.4.x recipe predated this validation.)
+> `output_modalities`. This is true in **both 1.4 and 2.0** (verified in source:
+> 1.4 `agentkit/agent.py:611` is an unconditional `if self._tts is None: raise`;
+> 2.0 `agentkit/agent.py:938` adds an `allow_missing_tts` escape hatch only when a
+> managed `pipeline_id`/preset is set, so 2.0 is actually slightly *more*
+> permissive). So the old `audio-modalities` recipe (no `.with_tts()`) would have
+> failed on 1.4 too — it was apparently never run. We **keep** an **inert** TTS
+> vendor: with `["audio"]` output there is no text for it to synthesize, so it is
+> never used — it exists only to satisfy the builder.
 
 - Build the LLM with `CustomLLM` **plus `output_modalities=["audio"]`**, keep STT,
   and keep an inert TTS:

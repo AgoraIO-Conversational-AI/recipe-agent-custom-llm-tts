@@ -12,8 +12,8 @@ returned PCM audio directly over RTC — **no TTS is used**. STT (Deepgram) stil
 transcribes the user's speech into text for the LLM.
 
 > `agent.py` still calls `.with_tts()` with an inert TTS vendor: the agora-agents
-> 2.0 builder requires one in cascading mode, but with `["audio"]` output it has
-> nothing to synthesize and is never used.
+> builder requires one in cascading mode (in both 1.4 and 2.0), but with `["audio"]`
+> output it has nothing to synthesize and is never used.
 
 ## Run
 

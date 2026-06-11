@@ -119,9 +119,9 @@ class Agent:
         # STT transcribes the user's speech into text for the LLM.
         stt = DeepgramSTT(model="nova-3", language="en")
 
-        # A TTS vendor is still configured because the agora-agents 2.0 builder
-        # REQUIRES one in cascading mode (it raises "TTS configuration is
-        # required" otherwise). It is effectively INERT: with
+        # A TTS vendor is still configured because the agora-agents builder
+        # REQUIRES one in cascading mode — in BOTH 1.4 and 2.0 (it raises
+        # "TTS configuration is required" otherwise). It is effectively INERT: with
         # output_modalities=["audio"] the LLM returns audio directly, so there
         # is no text for the TTS to synthesize and Agora plays the endpoint's
         # audio. We keep it only to satisfy the builder.
