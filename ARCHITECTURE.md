@@ -66,6 +66,8 @@ deployment.
 | `/get_config` | GET | Token + channel/UID config |
 | `/startAgent` | POST | Start the agent session |
 | `/stopAgent` | POST | Stop the agent by `agent_id` |
+| `/audio/chat/completions` | POST | Mounted custom audio endpoint (`server/src/llm.py`) |
+| `/audio/health` | GET | Mounted endpoint health check |
 
 ## Auth
 

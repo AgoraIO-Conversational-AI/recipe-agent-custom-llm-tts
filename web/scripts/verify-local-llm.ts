@@ -67,7 +67,7 @@ async function main() {
   }
 
   const dependencyCheck = bunRuntime.Bun.spawnSync({
-    cmd: [venvPython, '-c', 'import dotenv, fastapi, uvicorn'],
+    cmd: [venvPython, '-c', 'import dotenv, fastapi, uvicorn, agora_agent'],
     cwd: serverRoot,
     stderr: 'pipe',
     stdout: 'ignore',
