@@ -30,3 +30,6 @@ web/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local brainstorming/spec docs (superpowers)
+docs/superpowers/

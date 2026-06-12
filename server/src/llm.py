@@ -1,11 +1,12 @@
 """
-Custom Audio LLM Server — Mock (custom-llm-tts recipe)
+Custom Audio LLM endpoint — mock implementation (custom-llm-tts recipe).
 
-An OpenAI-compatible audio-modalities endpoint for Agora Conversational AI.
-Instead of returning text (delta.content), this endpoint returns AUDIO
-directly (delta.audio), bypassing TTS entirely.
+An OpenAI-compatible audio-modalities app that Agora cloud calls during a
+conversation. It is mounted into the API server at `/audio` (see server.py), so
+the public route is `POST /audio/chat/completions`. Instead of returning text
+(delta.content), it returns AUDIO directly (delta.audio), bypassing TTS.
 
-Contract — POST /audio/chat/completions, streaming SSE:
+Contract — POST /chat/completions  (→ /audio/chat/completions once mounted), SSE:
   1. Transcript chunk:  choices[0].delta.audio = {"id": <id>, "transcript": <text>}
   2. Audio chunks:      choices[0].delta.audio = {"id": <id>, "data": <base64 PCM>}
   3. Terminates with:   data: [DONE]
@@ -16,35 +17,24 @@ IMPORTANT: the transcript is NOT just for display. Agora cloud stores it as the
 agent's conversation context; omitting `audio.transcript` means the agent will
 not remember what it said.
 
-This mock generates a sine-wave tone (pure stdlib). Replace the audio source
-with your own model / TTS / pre-recorded clips, keeping the PCM format. A
-production endpoint should also validate the `Authorization: Bearer` header
-that Agora cloud forwards.
+Provider-agnostic by design — do NOT import `agora_agent` here (enforced by
+server/tests/test_llm_mount.py). This is the component you replace with your own
+model / TTS / pre-recorded clips, keeping the PCM format. A production endpoint
+should also validate the `Authorization: Bearer` header that Agora cloud forwards.
 """
 import asyncio
 import base64
 import json
 import logging
 import math
-import os
 import struct
 import uuid
 from typing import Dict, List, Optional, Union
 
-import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-
-# Load environment variables.
-# override=False so an explicitly-exported value (e.g. CUSTOM_LLM_PORT injected by
-# the verify:local:llm harness, or a process manager) takes precedence over a
-# checked-in .env.local. In normal `dev` no port is exported, so .env.local wins.
-_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(_base_dir, ".env.local"), override=False)
-load_dotenv(os.path.join(_base_dir, ".env"), override=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -133,7 +123,7 @@ def split_into_chunks(audio: bytes) -> List[bytes]:
     return [audio[i:i + CHUNK_SIZE] for i in range(0, len(audio), CHUNK_SIZE)]
 
 
-@app.post("/audio/chat/completions")
+@app.post("/chat/completions")
 async def audio_chat_completions(
     request: ChatCompletionRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -186,10 +176,3 @@ async def audio_chat_completions(
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "custom-llm-tts-mock"}
-
-
-if __name__ == "__main__":
-    port = int(os.getenv("CUSTOM_LLM_PORT", "8001"))
-    logger.info("Starting Custom Audio LLM Server (Mock) on port %d", port)
-    logger.info("Endpoint: http://0.0.0.0:%d/audio/chat/completions", port)
-    uvicorn.run(app, host="0.0.0.0", port=port)

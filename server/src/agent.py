@@ -5,8 +5,9 @@ High-level API for managing Agora Conversational AI Agents whose LLM stage
 returns AUDIO directly (output_modalities=["audio"]), bypassing TTS.
 
 The agent uses the CustomLLM vendor pointed at your own OpenAI-compatible
-audio endpoint (the llm/ server). Agora cloud calls that endpoint and plays
-the returned PCM audio straight to the user over RTC — there is no TTS step.
+audio endpoint, mounted at `/audio` in this same backend (see
+server/src/llm.py). Agora cloud calls that endpoint and plays the returned
+PCM audio straight to the user over RTC — there is no TTS step.
 """
 import logging
 import os
@@ -29,9 +30,9 @@ class Agent:
 
     The key difference from the quickstart is the LLM stage: this uses the
     CustomLLM vendor with `output_modalities=["audio"]`, pointed at your own
-    OpenAI-compatible audio endpoint (the custom_llm_server.py mock). Agora
-    cloud calls that endpoint and plays the returned PCM audio directly over
-    RTC — there is no TTS step.
+    OpenAI-compatible audio endpoint (mounted at /audio/chat/completions).
+    Agora cloud calls that endpoint and plays the returned PCM audio directly
+    over RTC — there is no TTS step.
 
     IMPORTANT: The custom LLM URL must be publicly accessible for the Agora
     Conversational AI Engine (cloud) to reach it. For local development, use
@@ -49,7 +50,7 @@ class Agent:
         # Custom LLM configuration.
         # CUSTOM_LLM_URL is the FULL OpenAI-compatible chat-completions URL and must be
         # PUBLICLY reachable: Agora cloud (not this backend) calls it. For local dev,
-        # expose the llm/ server on port 8001 via ngrok and paste that URL here.
+        # expose the /audio endpoint (port 8000) via ngrok and paste that URL here.
         # There is intentionally no localhost default: a localhost URL would let the
         # agent "start" while its LLM calls silently fail cloud-side.
         self.custom_llm_url = os.getenv("CUSTOM_LLM_URL")
@@ -62,7 +63,7 @@ class Agent:
         if not self.custom_llm_url:
             raise ValueError(
                 "CUSTOM_LLM_URL is required (the public chat-completions URL of your "
-                "custom LLM endpoint, e.g. https://<tunnel>/chat/completions)"
+                "custom LLM endpoint, e.g. https://<tunnel>/audio/chat/completions)"
             )
 
         if not self.custom_llm_api_key:
