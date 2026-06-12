@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agora_agent.agentkit.token import generate_convo_ai_token
 from agent import Agent
+from llm import app as llm_app
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -190,6 +191,11 @@ async def stop_agent(request: StopAgentRequest):
 
 
 app.include_router(router)
+
+# Mount the custom audio LLM endpoint into this same process. Agora cloud reaches
+# it at <public-url>/audio/chat/completions — same port as the token endpoints.
+# See server/src/llm.py, which stays free of agora_agent (provider-agnostic).
+app.mount("/audio", llm_app)
 
 
 if __name__ == "__main__":
