@@ -5,8 +5,9 @@ High-level API for managing Agora Conversational AI Agents whose LLM stage
 returns AUDIO directly (output_modalities=["audio"]), bypassing TTS.
 
 The agent uses the CustomLLM vendor pointed at your own OpenAI-compatible
-audio endpoint. Agora cloud calls that endpoint and plays the returned PCM
-audio straight to the user over RTC — there is no TTS step.
+audio endpoint, mounted at `/audio` in this same backend (see
+server/src/llm.py). Agora cloud calls that endpoint and plays the returned
+PCM audio straight to the user over RTC — there is no TTS step.
 """
 import logging
 import os
@@ -62,7 +63,7 @@ class Agent:
         if not self.custom_llm_url:
             raise ValueError(
                 "CUSTOM_LLM_URL is required (the public chat-completions URL of your "
-                "custom LLM endpoint, e.g. https://<tunnel>/chat/completions)"
+                "custom LLM endpoint, e.g. https://<tunnel>/audio/chat/completions)"
             )
 
         if not self.custom_llm_api_key:
