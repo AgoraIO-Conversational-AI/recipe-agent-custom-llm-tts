@@ -18,7 +18,7 @@ full STT → custom audio endpoint → RTC pipeline immediately, then replace th
 ## Run it
 
 ```bash
-# 1. Install + create both Python venvs
+# 1. Install web deps + create the Python venv
 bun run setup
 
 # 2. Add Agora credentials (CLI), or edit server/.env.local by hand
@@ -26,8 +26,8 @@ agora login
 agora project use <your-project>
 agora project env write server/.env.local
 
-# 3. Expose the custom audio endpoint publicly (Agora cloud calls it directly)
-ngrok http 8001
+# 3. Expose the backend publicly (Agora cloud calls the mounted /audio endpoint)
+ngrok http 8000
 
 # 4. Add the tunnel URL (note the /audio path) to server/.env.local
 #    CUSTOM_LLM_URL=https://<your-tunnel>.ngrok-free.dev/audio/chat/completions
@@ -51,7 +51,7 @@ Next.js  ──rewrite──▶  Agent backend  (server/, localhost:8000)
                        Agora ConvoAI Cloud
                           │  POST <CUSTOM_LLM_URL>   (Authorization: Bearer)
                           ▼
-                       Custom audio endpoint  (llm/, localhost:8001)
+                       Custom audio endpoint  (mounted at /audio in server/, :8000)
                           │  returns transcript + PCM audio (SSE)
                           ▲  public via ngrok tunnel
                        (no TTS — audio plays straight to RTC)
@@ -63,11 +63,10 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ```
 recipe-agent-custom-llm-tts/
-├── server/   # Agent backend (:8000) — CustomLLM(output_modalities=["audio"]), no TTS
-│   ├── src/{server.py, agent.py}
-│   └── scripts/run_fake_server.py
-├── llm/      # Custom audio endpoint (:8001) — POST /audio/chat/completions, no agora deps
-│   └── src/custom_llm_server.py
+├── server/   # Single backend (:8000) — token/agent endpoints + mounted /audio endpoint
+│   ├── src/{server.py, agent.py, llm.py}   # llm.py: POST /audio/chat/completions, no agora deps
+│   ├── scripts/run_fake_server.py
+│   └── tests/{conftest.py, test_llm_mount.py}
 ├── web/      # Shared Next.js frontend (:3000)
 └── package.json
 ```
@@ -80,19 +79,18 @@ Backend env file: [`server/.env.example`](server/.env.example).
 | --- | :---: | :---: | --- |
 | `AGORA_APP_ID` | ✅ | — | Agora Console → Project → App ID |
 | `AGORA_APP_CERTIFICATE` | ✅ | — | Agora Console → Project → App Certificate (server only) |
-| `CUSTOM_LLM_URL` | ✅ | — | **Public** URL of your `llm/` endpoint, ending in `/audio/chat/completions`. Agora cloud calls it; cannot be `localhost`. |
+| `CUSTOM_LLM_URL` | ✅ | — | **Public** URL of the mounted `/audio` endpoint, ending in `/audio/chat/completions`. Agora cloud calls it; cannot be `localhost`. |
 | `CUSTOM_LLM_API_KEY` | ✅ | `any-key-here` | Forwarded by Agora cloud as `Authorization: Bearer`. Required by the `CustomLLM` vendor. |
 | `CUSTOM_LLM_MODEL` |  | `audio-mock` | Model name passed to your endpoint |
 | `AGENT_GREETING` |  | built-in | Opening line (supported in audio mode via the messages protocol) |
-| `PORT` |  | `8000` | Agent backend port |
-| `CUSTOM_LLM_PORT` |  | `8001` | Port for the custom audio endpoint — lives in **`llm/.env.local`** |
+| `PORT` |  | `8000` | Backend port (serves the token/agent endpoints and `/audio`) |
 | `AGENT_BACKEND_URL` (web deploy) | ✅ | — | Required in a deployed `web` app when proxying to the backend |
 
 ## Commands
 
 ```bash
-bun run setup            # install web deps + create server/ and llm/ venvs
-bun run dev              # run llm (:8001) + backend (:8000) + web (:3000)
+bun run setup            # install web deps + create the server/ venv
+bun run dev              # run backend (:8000) + web (:3000)
 
 bun run doctor           # prerequisite check (no creds needed)
 bun run doctor:local     # + .env.local + credentials + CUSTOM_LLM_URL checks
@@ -104,9 +102,10 @@ bun run clean            # remove venvs and build artifacts
 
 ## Replacing the mock
 
-Replace `generate_tone()` in [`llm/src/custom_llm_server.py`](llm/src/custom_llm_server.py)
-with your real audio source. Keep the SSE contract (transcript chunk + base64 PCM16/16kHz
-chunks + `[DONE]`) — the transcript is required for agent context. See [`llm/README.md`](llm/README.md).
+Replace `generate_tone()` in [`server/src/llm.py`](server/src/llm.py) with your real
+audio source. Keep the SSE contract (transcript chunk + base64 PCM16/16kHz chunks +
+`[DONE]`) — the transcript is required for agent context. Keep `llm.py` free of
+`agora-agents` (a test enforces this). See [`server/README.md`](server/README.md).
 
 ## Troubleshooting
 
@@ -116,7 +115,7 @@ chunks + `[DONE]`) — the transcript is required for agent context. See [`llm/R
 | Agent doesn't remember context | Your endpoint must include `audio.transcript` in the first chunk. |
 | `doctor:local` warns about localhost | Replace the local URL with your public tunnel URL. |
 | Local calls fail under a global proxy (Clash, etc.) | Route `127.0.0.1`/`localhost`/RFC-1918 DIRECT in your proxy (don't disable it). |
-| `Missing llm/venv` during verify | Run `bun run setup`. |
+| `Missing server/venv` during verify | Run `bun run setup`. |
 
 ## License
 
