@@ -29,9 +29,12 @@ jobs:
   web:
     name: web (bun)
     runs-on: ubuntu-latest
+    env:
+      AGENT_BACKEND_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bun test
+        working-directory: web
+      - run: bun run verify
         working-directory: web
