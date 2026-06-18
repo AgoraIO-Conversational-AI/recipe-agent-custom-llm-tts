@@ -13,7 +13,7 @@ AI recipes family, derived from the base `agent-quickstart-python` template via 
   returning transcript + base64 PCM16/16kHz audio). Uses
   `CustomLLM(output_modalities=["audio"])`; no TTS is *used* at runtime, but an
   **inert TTS vendor is still configured** because the agora-agents builder requires
-  `.with_tts()` in cascading mode (1.4 and 2.0 alike). SDK: `agora-agents>=2.0.0`
+  `.with_tts()` in cascading mode (1.4 and 2.0 alike). SDK: `agora-agents>=2.3.0`
   (`import agora_agent`) — but `server/src/llm.py` itself stays free of it
   (provider-agnostic; the component a developer replaces). Because Agora cloud reaches
   `/audio` over the public internet, the whole backend is public, so the token
